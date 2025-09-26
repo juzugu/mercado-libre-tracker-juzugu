@@ -4,7 +4,8 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import csv
 import os
-#i put the ur in a variable to make it easier to read
+
+CSV_FILE = 'price_history.csv'
 url = "https://www.mercadolibre.com.co/pepper-gel-sabre-aim-and-fire-w-trigger-45m-range/p/MCO2027801104#polycard_client=recommendations_home_navigation-recommendations&reco_backend=machinalis-homes-univb-equivalent-offer&wid=MCO2968521650&reco_client=home_navigation-recommendations&reco_item_pos=0&reco_backend_type=function&reco_id=6ac44063-52fb-4475-aecb-2e59d38f3279&sid=recos&c_id=/home/navigation-recommendations/element&c_uid=7e07e687-c8d4-4463-bed1-3639e7ad7722"
 #i added headers to mimic a real browser request(this is important to avoid being blocked by some websites)
 headers = {
