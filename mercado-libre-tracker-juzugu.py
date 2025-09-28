@@ -48,11 +48,15 @@ def with_retries(fn, tries=3, base_delay=1):
 products_to_track = load_products()
 
 # Remove duplicate URLs, to avoid run to rusl which are the same productº
-seen = set()
-products_to_track = [
-    p for p in products_to_track
-    if p.get('url') and not (p['url'] in seen or seen.add(p['url']))
-]
+unique_products = []
+seen_urls = set()
+
+for product in products_to_track:
+    url = product.get('url')
+    if url and url not in seen_urls:
+        unique_products.append(product)
+        seen_urls.add(url)
+products_to_track = unique_products
 
 
 # 2. If the list is empty, ask the user for the first product
