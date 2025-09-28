@@ -5,7 +5,10 @@ from datetime import datetime
 import csv
 import os
 import json 
+import time
+import sqlite3
 
+DB_FILE = 'price_history.db'
 
 PRODUCTS_FILE = 'products.json' # File to store the list of products to track
 PRICE_HISTORY_CSV = 'price_history.csv' # File to store the price history
@@ -30,10 +33,27 @@ def save_products(products):
         json.dump(products, f, indent=4) # indent=4 makes the file readable
     print(f"Product list saved to {PRODUCTS_FILE}")
 
+def with_retries(fn, tries=3, base_delay=1):
+    """Call fn() up to `tries` times. Wait 1s, 2s, 4s ... between failures."""
+    for i in range(tries):
+        try:
+            return fn()
+        except requests.exceptions.RequestException:
+            if i == tries - 1:
+                raise
+            time.sleep(base_delay * (2 ** i))
 
 
 # 1. Load the products from the file
 products_to_track = load_products()
+
+# Remove duplicate URLs, to avoid run to rusl which are the same productº
+seen = set()
+products_to_track = [
+    p for p in products_to_track
+    if p.get('url') and not (p['url'] in seen or seen.add(p['url']))
+]
+
 
 # 2. If the list is empty, ask the user for the first product
 if not products_to_track:
@@ -55,7 +75,6 @@ if not products_to_track:
 # 3. Proceed with scraping (this part is mostly the same as before)
 print("\n--- Starting Price Check ---")
 
-file_exists = os.path.exists(PRICE_HISTORY_CSV)
 
 with open(PRICE_HISTORY_CSV, 'a', newline='', encoding='utf-8') as f:
     writer = csv.DictWriter(f, fieldnames=['Timestamp','Product Name','Scraped Title','Price','PriceNumeric','Status'])
@@ -63,14 +82,11 @@ with open(PRICE_HISTORY_CSV, 'a', newline='', encoding='utf-8') as f:
         writer.writeheader()
 
 
-    if not file_exists:
-        writer.writeheader()
-
     for product in products_to_track:
         print(f"--- Checking: {product['name']} ---")
-        
+
         try:
-            response = requests.get(product['url'], headers=headers, timeout=10)
+            response = with_retries(lambda: requests.get(product['url'], headers=headers, timeout=10))
             response.raise_for_status()
 
             html_text = response.text
@@ -82,8 +98,20 @@ with open(PRICE_HISTORY_CSV, 'a', newline='', encoding='utf-8') as f:
             price_selector = "div.ui-pdp-price__second-line span.andes-money-amount__fraction"
             price_element = Bsoup.select_one(price_selector)
             price = price_element.text.strip() if price_element else "Price not found"
+
+            price_numeric = None # Start with None for clarity
+            if price_element:
+                try:
+                    # Clean the string by removing dots, dollar signs, and whitespace in case mercado libre change that 
+                    cleaned_price_string = price.replace('.', '').replace('$', '').strip()
+                    price_numeric = int(cleaned_price_string)
+                except (ValueError, TypeError):
+                    # If conversion fails, log a warning and set a sentinel value
+                    print(f"  - Warning: Could not convert price '{price}' to a number.")
+                    price_numeric = -1          
             
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            status = "OK" if (title_element and price_element) else "SELECTOR_MISS"
 
             print(f"  Product: {title}")
             print(f"  Price: {price}")
@@ -92,10 +120,11 @@ with open(PRICE_HISTORY_CSV, 'a', newline='', encoding='utf-8') as f:
                 'Timestamp': timestamp,
                 'Product Name': product['name'],
                 'Scraped Title': title,
-                'Price': price
+                'Price': price,
+                'Status': status
             })
             print(f"  Data successfully saved for {product['name']}")
-
+            time.sleep(1.0) #this is to avoid being blocked by the server because to many interactions in a short time
         except requests.exceptions.RequestException as e:
             print(f"  Error fetching {product['name']}: {e}")
             continue
