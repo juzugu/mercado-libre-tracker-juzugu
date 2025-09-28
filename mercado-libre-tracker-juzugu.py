@@ -76,10 +76,25 @@ if not products_to_track:
 print("\n--- Starting Price Check ---")
 
 
-with open(PRICE_HISTORY_CSV, 'a', newline='', encoding='utf-8') as f:
-    writer = csv.DictWriter(f, fieldnames=['Timestamp','Product Name','Scraped Title','Price','PriceNumeric','Status'])
-    if f.tell() == 0:  # to write in case is empty
-        writer.writeheader()
+with sqlite3.connect(DB_FILE) as con:
+    cur = con.cursor()
+
+    # Optional but recommended pragmas: speed + durability
+    cur.execute("PRAGMA journal_mode=WAL;")
+    cur.execute("PRAGMA synchronous=NORMAL;")
+
+    # Make sure table exists
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS prices (
+            Timestamp     TEXT,
+            ProductName   TEXT,
+            ScrapedTitle  TEXT,
+            Price         TEXT,
+            PriceNumeric  INTEGER,
+            Status        TEXT
+        )
+    """)
+
 
 
     for product in products_to_track:
@@ -116,15 +131,19 @@ with open(PRICE_HISTORY_CSV, 'a', newline='', encoding='utf-8') as f:
             print(f"  Product: {title}")
             print(f"  Price: {price}")
             
-            writer.writerow({
-                'Timestamp': timestamp,
-                'Product Name': product['name'],
-                'Scraped Title': title,
-                'Price': price,
-                'Status': status
-            })
+            cur.execute(
+            "INSERT INTO prices (Timestamp, ProductName, ScrapedTitle, Price, PriceNumeric, Status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (timestamp, product['name'], title, price, price_numeric, status)
+                    )
+
+
+
             print(f"  Data successfully saved for {product['name']}")
             time.sleep(1.0) #this is to avoid being blocked by the server because to many interactions in a short time
         except requests.exceptions.RequestException as e:
             print(f"  Error fetching {product['name']}: {e}")
             continue
+    con.commit()
+print("\n--- Price Check Complete ---")
+print(f"Price history saved to {DB_FILE}")
