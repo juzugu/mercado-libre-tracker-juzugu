@@ -150,3 +150,4 @@ def main():
 # This ensures main() is called only when the script is executed directly
 if __name__ == "__main__":
     main()
+    df
