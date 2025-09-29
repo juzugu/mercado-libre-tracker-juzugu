@@ -1,0 +1,7 @@
+DB_FILE = 'price_history.db'
+PRODUCTS_FILE = 'products.json'  # File to store the list of products to track
+PRICE_HISTORY_CSV = 'price_history.csv'  # File to store the price history
+
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
