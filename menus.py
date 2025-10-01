@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 import json
 import os
 from urllib.parse import urlparse
-
+from . import config, database 
 def load_products() -> List[Dict[str, Any]]:
     """Load product list. Returns [] if missing/corrupt; skips invalid rows."""
     path = Path(config.PRODUCTS_FILE)
