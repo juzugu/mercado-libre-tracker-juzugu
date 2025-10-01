@@ -60,10 +60,9 @@ def scrape_product(product: Dict[str, str]) -> Dict[str, Any]:
         return {**base_result, "status": "INVALID_INPUT", "error_message": "Missing 'url'."}
 
     try:
-        response = utils.with_retries(
-            lambda: requests.get(
-                url, headers=(getattr(config, "headers", None) or {}), timeout=REQUEST_TIMEOUT_SECONDS
-            )
+        # Run the request with retry using default settings; pass headers dict (not callable)
+        response = utils.with_retries()(
+            lambda: requests.get(url, headers=config.headers, timeout=REQUEST_TIMEOUT_SECONDS)
         )
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
@@ -85,7 +84,7 @@ def scrape_product(product: Dict[str, str]) -> Dict[str, Any]:
     return {
         **base_result,
         "scraped_title": scraped_title,
-        "price_string": price_str,
+        "price": price_str, 
         "price_numeric": price_numeric,
         "status": "OK" if price_numeric is not None else "PARSE_ERROR"
     }

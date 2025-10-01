@@ -1,8 +1,12 @@
 # main.py
 
-from . import menus
-from . import scraper
-from . import database
+try:
+    from . import menus
+    from . import scraper
+    from . import database
+except ImportError:
+    # Script execution fallback (when not running as a package/module)
+    import menus, scraper, database
 import time
 
 
@@ -42,6 +46,7 @@ def run_price_check():
 
 def main():
     """Main entry point for the application menu."""
+    database.initialize()
     while True:
         print("\n--- Price Tracker Menu ---")
         print("1. Run Price Check")
