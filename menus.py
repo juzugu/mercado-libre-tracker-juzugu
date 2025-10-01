@@ -2,6 +2,7 @@
 import json
 import sqlite3
 from . import config
+from . import database
 
 def load_products():
     """Tries to load the product list from products.json."""
@@ -103,21 +104,15 @@ def delete_product_ui():
 
 def view_product_history_ui():
     """Handles the user interface for viewing a product's price history."""
-    # replaces all the menu logic
     selected_product = _select_product("Select a Product to View History")
 
     if not selected_product:
         return
 
-    # The rest of the function is now ONLY about viewing history
     product_name_to_query = selected_product['name']
-    with sqlite3.connect(config.DB_FILE) as con:
-        cur = con.cursor()
-        cur.execute(
-            "SELECT Timestamp, ScrapedTitle, Price FROM prices WHERE ProductName = ? ORDER BY Timestamp DESC",
-            (product_name_to_query,)
-        )
-        results = cur.fetchall()
+    
+    # This function now calls your database module instead of using sqlite3 directly
+    results = database.get_product_history(product_name_to_query)
 
     if not results:
         print(f"\nNo history found for '{product_name_to_query}'.")
