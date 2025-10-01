@@ -1,11 +1,15 @@
-
 # context: product persistence utilities
 from pathlib import Path
 from typing import List, Dict, Any
 import json
 import os
 from urllib.parse import urlparse
-from . import config, database 
+try:
+    from . import config, database  # package-relative
+except ImportError:  # script execution fallback
+    import config, database
+
+
 def load_products() -> List[Dict[str, Any]]:
     """Load product list. Returns [] if missing/corrupt; skips invalid rows."""
     path = Path(config.PRODUCTS_FILE)
@@ -27,7 +31,6 @@ def load_products() -> List[Dict[str, Any]]:
     except OSError as e:
         print(f"Error reading {path}: {e}")
         return []
-
 
 
 def save_products(products: List[Dict[str, Any]]) -> None:
@@ -58,7 +61,6 @@ def _normalize_url(u: str) -> str:
         return ""
     path = p.path.rstrip("/") if p.path not in ("", "/") else p.path
     return f"{p.scheme.lower()}://{p.netloc.lower()}{path}{('?' + p.query) if p.query else ''}"
-
 
 
 def add_product_ui() -> None:
@@ -119,10 +121,6 @@ def delete_product_ui() -> None:
     print(f"'{product_to_delete['name']}' has been deleted successfully.")
 
 
-
-
-
-
 def _select_product(prompt_message):
     """
     Displays a menu of products and prompts the user to select one.
@@ -146,22 +144,22 @@ def _select_product(prompt_message):
     try:
         choice_str = input("\nEnter your choice: ")
         choice_num = int(choice_str)
-
-        if choice_num == 0:
-            return None # User chose to cancel
-
-        product_index = choice_num - 1
-        if 0 <= product_index < len(products):
-            return products[product_index] # Success! Return the chosen product.
-        else:
-            print("\n[Error] Invalid number.")
-            return None # The number was out of range
-
+    except (KeyboardInterrupt, EOFError):
+        print("\n[Info] Selection cancelled.")
+        return None
     except ValueError:
         print("\n[Error] Please enter a valid number.")
-        return None # The input wasn't a number
+        return None
 
+    if choice_num == 0:
+        return None  # User chose to cancel
 
+    product_index = choice_num - 1
+    if 0 <= product_index < len(products):
+        return products[product_index]  # Success! Return the chosen product.
+    else:
+        print("\n[Error] Invalid number.")
+        return None  # The number was out of range
 
 
 def view_product_history_ui():
