@@ -1,17 +1,16 @@
 # main.py
 
 try:
-    from . import menus
-    from . import scraper
-    from . import database
+    from . import menus, scraper, database
 except ImportError:
-    # Script execution fallback (when not running as a package/module)
-    import menus, scraper, database
+    import menus, scraper, database  # script fallback
 import time
+
+_SLEEP_SECONDS = 1.0
 
 
 def run_price_check():
-    """The 'conductor' function that now also checks for price drops."""
+    """Run all product scrapes, alert on price drops, and persist results."""
     products = menus.load_products()
     if not products:
         print("\nNo products to check.")
@@ -19,27 +18,31 @@ def run_price_check():
 
     print("\n--- Starting Price Check ---")
     for product in products:
-        scraped_data = scraper.scrape_product(product)
+        name = product.get("name", "<unnamed>")
+        try:
+            scraped = scraper.scrape_product(product)
+        except Exception as e:
+            print(f"  [Error] {name}: unexpected error during scrape: {e}")
+            time.sleep(_SLEEP_SECONDS)
+            continue
+        if not scraped:
+            print(f"  [Skip] {name}: no data returned by scraper.")
+            time.sleep(_SLEEP_SECONDS)
+            continue
 
-        # Safe access to avoid KeyError/TypeError when scraping fails
-        price_num = None
-        if scraped_data:
-            price_num = scraped_data.get("price_numeric")
+        price_num = scraped.get("price_numeric")
+        last_price = database.get_latest_price(name)
 
-        if isinstance(price_num, (int, float)) and price_num > 0:
-            # Get the last known price from the database
-            last_price = database.get_latest_price(product["name"])
+        # Alert only on real price drops; tolerate None/missing price.
+        if isinstance(price_num, (int, float)) and last_price is not None and price_num < last_price:
+            print("  🎉 PRICE DROP ALERT! 🎉")
+            print(f"  '{name}' dropped from ${last_price} to ${price_num}!")
 
-            # Compare the prices and print an alert
-            if last_price is not None and price_num < last_price:
-                print("  🎉 PRICE DROP ALERT! 🎉")
-                print(f"  '{product['name']}' dropped from ${last_price} to ${price_num}!")
+        # Persist whatever the scraper produced (status explains failures).
+        database.save_price_data(scraped)
+        print(f"  Saved: {name} (status={scraped.get('status', 'UNKNOWN')})")
 
-            # We always save the new price
-            database.save_price_data(scraped_data)
-            print(f"  Data successfully saved for {product['name']}")
-
-        time.sleep(1.0)
+        time.sleep(_SLEEP_SECONDS)
 
     print("\n--- Price Check Complete ---")
 

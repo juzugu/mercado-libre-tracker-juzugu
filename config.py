@@ -9,18 +9,25 @@ DEFAULT_USER_AGENT: Final = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 )
+DEFAULT_ACCEPT_LANGUAGE: Final = "es-CO,es;q=0.9,en;q=0.8"
+
+SCRAPER_USER_AGENT_ENV: Final = "SCRAPER_USER_AGENT"
+SCRAPER_ACCEPT_LANGUAGE_ENV: Final = "SCRAPER_ACCEPT_LANGUAGE"
+
 
 def get_request_headers(
     user_agent: str | None = None,
-    accept_language: str = "es-CO,es;q=0.9,en;q=0.8",
-) -> dict:
-    """Build request headers with safe defaults. UA can be overridden via SCRAPER_USER_AGENT env."""
-    ua = user_agent or os.getenv("SCRAPER_USER_AGENT") or DEFAULT_USER_AGENT
+    accept_language: str = DEFAULT_ACCEPT_LANGUAGE,
+) -> dict[str, str]:
+    """Build request headers with safe defaults. Env overrides: SCRAPER_USER_AGENT, SCRAPER_ACCEPT_LANGUAGE."""
+    ua = user_agent or os.getenv(SCRAPER_USER_AGENT_ENV) or DEFAULT_USER_AGENT
+    lang = accept_language or os.getenv(SCRAPER_ACCEPT_LANGUAGE_ENV) or DEFAULT_ACCEPT_LANGUAGE
     return {
         "User-Agent": ua,
-        "Accept-Language": accept_language,
+        "Accept-Language": lang,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Connection": "close",  # helps avoid flaky keep-alive issues
     }
+
 
 headers = get_request_headers()
