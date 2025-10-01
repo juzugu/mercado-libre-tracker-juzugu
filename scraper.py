@@ -6,7 +6,10 @@ from typing import Dict, Any, Optional
 
 import requests
 from bs4 import BeautifulSoup
-from . import config, utils
+try:
+    from . import config, utils  # package-relative
+except ImportError:  # script execution fallback
+    import config, utils
 
 # --- Constants ---
 # Using constants makes selectors easier to find and update.
@@ -32,7 +35,7 @@ def _parse_price(price_text: str) -> Optional[float]:
     except (ValueError, TypeError):
         logging.warning(f"Could not convert price text '{price_text}' to a number.")
         return None
-    
+
 def scrape_product(product: Dict[str, str]) -> Dict[str, Any]:
     """
     Scrapes product data, returning a structured dictionary on both success and failure.
@@ -50,10 +53,16 @@ def scrape_product(product: Dict[str, str]) -> Dict[str, Any]:
         "url": product.get('url'),
     }
 
+    # Validate required input early to avoid KeyError.
+    url = product.get('url')
+    if not url:
+        logging.error("Invalid product input: missing 'url'.")
+        return {**base_result, "status": "INVALID_INPUT", "error_message": "Missing 'url'."}
+
     try:
         response = utils.with_retries(
             lambda: requests.get(
-                product['url'], headers=config.HEADERS, timeout=REQUEST_TIMEOUT_SECONDS
+                url, headers=(getattr(config, "headers", None) or {}), timeout=REQUEST_TIMEOUT_SECONDS
             )
         )
         response.raise_for_status()
