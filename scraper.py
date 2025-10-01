@@ -1,49 +1,82 @@
 # scraper.py
+import logging
+import re
+from datetime import datetime
+from typing import Dict, Any, Optional
+
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
 from . import config, utils
 
-def scrape_product(product):
+# --- Constants ---
+# Using constants makes selectors easier to find and update.
+TITLE_SELECTOR = 'h1.ui-pdp-title'
+PRICE_SELECTOR = 'div.ui-pdp-price__second-line span.andes-money-amount__fraction'
+REQUEST_TIMEOUT_SECONDS = 10
+
+# Use logging instead of print for better control over output in production.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def _parse_price(price_text: str) -> Optional[float]:
     """
-    Scrapes a single product's data from its URL.
+    Cleans a raw price string and converts it to a float.
+    Returns None if conversion fails.
+    """
+    if not price_text:
+        return None
+    try:
+        # Remove all non-digit characters (e.g., '$', '.') to handle various formats.
+        cleaned_text = re.sub(r'[^\d]', '', price_text)
+        return float(cleaned_text)
+    except (ValueError, TypeError):
+        logging.warning(f"Could not convert price text '{price_text}' to a number.")
+        return None
+    
+def scrape_product(product: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Scrapes product data, returning a structured dictionary on both success and failure.
 
     Args:
-        product (dict): A dictionary with 'name' and 'url' keys.
+        product: A dictionary with 'name' and 'url' keys.
 
     Returns:
-        A dictionary with all scraped data, or None on error.
+        A dictionary containing scraped data and a status code.
     """
-    print(f"--- Checking: {product['name']} ---")
+    logging.info(f"Checking product: {product.get('name', 'Unknown')}")
+    base_result = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "product_name": product.get('name'),
+        "url": product.get('url'),
+    }
+
     try:
-        response = utils.with_retries(lambda: requests.get(product['url'], headers=config.HEADERS, timeout=10))
+        response = utils.with_retries(
+            lambda: requests.get(
+                product['url'], headers=config.HEADERS, timeout=REQUEST_TIMEOUT_SECONDS
+            )
+        )
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        title_element = soup.find('h1', class_='ui-pdp-title')
-        scraped_title = title_element.text.strip() if title_element else "Title not found"
-
-        price_selector = "div.ui-pdp-price__second-line span.andes-money-amount__fraction"
-        price_element = soup.select_one(price_selector)
-        price = price_element.text.strip() if price_element else "Price not found"
-
-        price_numeric = -1
-        if price_element:
-            try:
-                cleaned_price_string = price.replace('.', '').replace('$', '').strip()
-                price_numeric = float(cleaned_price_string)
-            except (ValueError, TypeError):
-                print(f"  - Warning: Could not convert price '{price}' to a number.")
-
-        return {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "product_name": product['name'],
-            "scraped_title": scraped_title,
-            "price": price,
-            "price_numeric": price_numeric,
-            "status": "OK" if (title_element and price_element) else "SELECTOR_MISS"
-        }
-
     except requests.exceptions.RequestException as e:
-        print(f"  Error fetching {product['name']}: {e}")
-        return None
+        logging.error(f"Network error for {product.get('name')}: {e}")
+        return {**base_result, "status": "NETWORK_ERROR", "error_message": str(e)}
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    title_element = soup.select_one(TITLE_SELECTOR)
+    price_element = soup.select_one(PRICE_SELECTOR)
+
+    if not title_element or not price_element:
+        logging.warning(f"Selector miss for {product.get('name')}. Page may have changed.")
+        return {**base_result, "status": "SELECTOR_MISS"}
+
+    scraped_title = title_element.get_text(strip=True)
+    price_str = price_element.get_text(strip=True)
+    price_numeric = _parse_price(price_str)
+
+    return {
+        **base_result,
+        "scraped_title": scraped_title,
+        "price_string": price_str,
+        "price_numeric": price_numeric,
+        "status": "OK" if price_numeric is not None else "PARSE_ERROR"
+    }
