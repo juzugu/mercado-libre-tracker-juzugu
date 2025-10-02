@@ -11,20 +11,35 @@ except ImportError:  # script execution fallback
 
 
 def load_products() -> List[Dict[str, Any]]:
-    """Load product list. Returns [] if missing/corrupt; skips invalid rows."""
+    """Load the product list from PRODUCTS_FILE.
+
+    Returns:
+        A list of {"name": str, "url": str} dicts.
+        Returns [] if the file is missing, corrupt, or unreadable.
+        Skips any items that don’t have both 'name' and 'url'.
+    """
     path = Path(config.PRODUCTS_FILE)
+
+    # If the file doesn’t exist yet, start with an empty list.
     if not path.exists():
         return []
+
     try:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
+
+        # Expect a list of dicts; anything else => empty list.
         if not isinstance(data, list):
             return []
-        valid: List[Dict[str, Any]] = []
-        for item in data:
-            if isinstance(item, dict) and "name" in item and "url" in item:
-                valid.append({"name": str(item["name"]), "url": str(item["url"])})
+
+        # Keep only well-formed items; coerce fields to str for safety.
+        valid: List[Dict[str, Any]] = [
+            {"name": str(item["name"]), "url": str(item["url"])}
+            for item in data
+            if isinstance(item, dict) and "name" in item and "url" in item
+        ]
         return valid
+
     except json.JSONDecodeError:
         print(f"Warning: {path} is corrupt; starting with an empty list.")
         return []
@@ -33,42 +48,92 @@ def load_products() -> List[Dict[str, Any]]:
         return []
 
 
+
+
+
 def save_products(products: List[Dict[str, Any]]) -> None:
-    """Save product list atomically to avoid partial writes on crash."""
+    """Save the product list to PRODUCTS_FILE using an atomic write.
+
+    Process:
+      1) Ensure the target directory exists.
+      2) Write JSON to a temp file next to the final file.
+      3) Flush + fsync to push bytes to disk.
+      4) Atomically replace the old file with the new one.
+      Returns None; prints a message on success or errors.
+    """
     path = Path(config.PRODUCTS_FILE)
+
+    # 1) Make sure the directory exists.
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Prepare a temp file in the same directory (same filesystem is important).
     tmp = path.with_suffix(path.suffix + ".tmp")
+
     try:
+        # 2) Write human-readable JSON to the temp file.
         with tmp.open("w", encoding="utf-8") as f:
             json.dump(products, f, indent=4, ensure_ascii=False)
+
+            # 3) Ensure data is physically written before replacing.
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)  # atomic on the same filesystem
+
+        # 4) Replace is atomic on the same filesystem.
+        os.replace(tmp, path)
         print(f"Product list saved to {path}")
+
     except OSError as e:
         print(f"Error saving to {path}: {e}")
+
+        # Best-effort cleanup of the temp file (ignore if already gone).
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
 
 
+
 def _normalize_url(u: str) -> str:
-    """Basic URL normalization for duplicate checks; returns '' if invalid."""
+    """Normalize a URL for duplicate checks.
+    
+    - Trim whitespace.
+    - Require scheme and netloc; otherwise return ''.
+    - Lowercase scheme and host.
+    - Keep path as '' or '/', otherwise remove a trailing '/'.
+    - Preserve the query string.
+    """
     u = u.strip()
     p = urlparse(u)
     if not p.scheme or not p.netloc:
         return ""
-    path = p.path.rstrip("/") if p.path not in ("", "/") else p.path
-    return f"{p.scheme.lower()}://{p.netloc.lower()}{path}{('?' + p.query) if p.query else ''}"
+
+    if p.path in ("", "/"):
+        path = p.path
+    else:
+        path = p.path.rstrip("/")
+
+    scheme = p.scheme.lower()
+    host = p.netloc.lower()
+    query_part = ("?" + p.query) if p.query else ""
+
+    normalized = f"{scheme}://{host}{path}{query_part}"
+    return normalized
+
 
 
 def add_product_ui() -> None:
-    """Handles the user interface for adding a new product."""
+    """Add a new product via CLI input.
+
+    Flow:
+      1) Read product name and URL from the user (allow cancel).
+      2) Validate non-empty inputs and URL structure.
+      3) Check for duplicates by normalized URL.
+      4) Append and persist the product list.
+    """
     print("\n--- Add a New Product ---")
     try:
         product_name = input("Enter the name of the product: ").strip()
-        product_url  = input("Enter the URL of the product: ").strip()
+        product_url = input("Enter the URL of the product: ").strip()
     except (KeyboardInterrupt, EOFError):
         print("\n[Info] Add cancelled.")
         return
@@ -83,7 +148,11 @@ def add_product_ui() -> None:
         return
 
     products: List[Dict[str, Any]] = load_products()
-    existing = { _normalize_url(p.get("url","")): p for p in products }
+    existing: Dict[str, Dict[str, Any]] = {}
+    for p in products:
+        key = _normalize_url(p.get("url", ""))
+        existing[key] = p
+
     if normalized in existing:
         print(f"\n[Error] This URL is already being tracked as '{existing[normalized]['name']}'.")
         return
@@ -94,7 +163,13 @@ def add_product_ui() -> None:
 
 
 def _confirm(prompt: str) -> bool:
-    """Yes/No prompt accepting y/yes/s/si (case-insensitive). Defaults to No."""
+    """Ask a yes/no question and return True for y/yes/s/si (case-insensitive).
+    
+    Behavior:
+      - Prompts the user and lowercases their answer.
+      - Returns False on cancel (Ctrl+C/Ctrl+Z) or any non-affirmative input.
+      - Default is No.
+    """
     try:
         ans = input(f"{prompt} ").strip().lower()
     except (KeyboardInterrupt, EOFError):
@@ -103,8 +178,15 @@ def _confirm(prompt: str) -> bool:
     return ans in {"y", "yes", "s", "si"}
 
 
+
 def delete_product_ui() -> None:
-    """Handles the user interface for deleting a product."""
+    """Delete a product selected by the user.
+
+    Flow:
+      1) Let the user pick a product (or cancel).
+      2) Ask for confirmation.
+      3) Remove that product (by normalized URL) and save the new list.
+    """
     product_to_delete = _select_product("Select a Product to Delete")
     if not product_to_delete:
         print("[Info] Deletion cancelled.")
@@ -115,21 +197,27 @@ def delete_product_ui() -> None:
         return
 
     products = load_products()
-    target_norm = _normalize_url(product_to_delete.get("url",""))
-    products_after = [p for p in products if _normalize_url(p.get("url","")) != target_norm]
+    target_norm = _normalize_url(product_to_delete.get("url", ""))
+
+    products_after = []
+    for p in products:
+        current_norm = _normalize_url(p.get("url", ""))
+        if current_norm != target_norm:
+            products_after.append(p)
+
     save_products(products_after)
     print(f"'{product_to_delete['name']}' has been deleted successfully.")
 
 
+
 def _select_product(prompt_message):
-    """
-    Displays a menu of products and prompts the user to select one.
+    """Display the saved products as a numbered menu and return the chosen one.
 
     Args:
-        prompt_message (str): The message to show the user before the list.
+        prompt_message (str): Message shown above the list.
 
     Returns:
-        A dictionary of the selected product, or None if the user cancels or an error occurs.
+        dict | None: The selected product dict, or None if cancelled/invalid.
     """
     products = load_products()
     if not products:
@@ -152,32 +240,39 @@ def _select_product(prompt_message):
         return None
 
     if choice_num == 0:
-        return None  # User chose to cancel
+        return None
 
     product_index = choice_num - 1
     if 0 <= product_index < len(products):
-        return products[product_index]  # Success! Return the chosen product.
-    else:
-        print("\n[Error] Invalid number.")
-        return None  # The number was out of range
+        return products[product_index]
+
+    print("\n[Error] Invalid number.")
+    return None
+
 
 
 def view_product_history_ui():
-    """Handles the user interface for viewing a product's price history."""
-    selected_product = _select_product("Select a Product to View History")
+    """Show the saved price history for a product the user selects.
 
+    Flow:
+      1) Ask the user to pick a product.
+      2) Query the database for that product’s history.
+      3) Print each record as [timestamp] - price - title.
+      Returns None.
+    """
+    selected_product = _select_product("Select a Product to View History")
     if not selected_product:
         return
 
-    product_name_to_query = selected_product['name']
-    
-    # This function now calls your database module instead of using sqlite3 directly
+    product_name_to_query = selected_product["name"]
     results = database.get_product_history(product_name_to_query)
 
     if not results:
         print(f"\nNo history found for '{product_name_to_query}'.")
-    else:
-        print(f"\n--- Price History for {product_name_to_query} ---")
-        for row in results:
-            timestamp, title, price = row
-            print(f"  [{timestamp}] - {price} - {title}")
+        return
+
+    print(f"\n--- Price History for {product_name_to_query} ---")
+    for row in results:
+        timestamp, title, price = row
+        print(f"  [{timestamp}] - {price} - {title}")
+
