@@ -1,3 +1,4 @@
+
 import functools
 import logging
 import time
@@ -5,8 +6,7 @@ from typing import Callable, Tuple, Type, TypeVar
 
 from requests.exceptions import RequestException
 
-# Configure a basic logger for feedback
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 DEFAULT_TRIES = 3
 DEFAULT_DELAY_SECONDS = 1
@@ -14,15 +14,13 @@ DEFAULT_EXCEPTIONS_TO_RETRY: Tuple[Type[Exception], ...] = (RequestException,)
 
 T = TypeVar("T")
 
+
 def with_retries(
     max_tries: int = DEFAULT_TRIES,
     delay_seconds: int = DEFAULT_DELAY_SECONDS,
     exceptions_to_retry: Tuple[Type[Exception], ...] = DEFAULT_EXCEPTIONS_TO_RETRY,
 ) -> Callable[[Callable[[], T]], T]:
-    """Return a runner that executes a thunk with retries and exponential backoff.
-    Usage:
-        result = with_retries()(lambda: do_work())
-    """
+    """Run a zero-arg callable with retries and backoff."""
     def runner(thunk: Callable[[], T]) -> T:
         last_exc: Exception | None = None
         for attempt in range(max_tries):
@@ -39,12 +37,13 @@ def with_retries(
         raise last_exc
     return runner
 
+
 def retry(
     max_tries: int = DEFAULT_TRIES,
     delay_seconds: int = DEFAULT_DELAY_SECONDS,
     exceptions_to_retry: Tuple[Type[Exception], ...] = DEFAULT_EXCEPTIONS_TO_RETRY,
 ):
-    """A decorator to retry a function call with exponential backoff."""
+    """Decorator: retry the wrapped function with backoff."""
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> T:
