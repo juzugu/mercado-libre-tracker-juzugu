@@ -1,21 +1,26 @@
+"""SQLite helpers for storing and querying price history."""
+
 import sqlite3
 from typing import Dict, Any, Optional, Iterable, Tuple
+
 try:
     from . import config  # package-relative
-except ImportError:       # script execution fallback
+except ImportError:  # script execution fallback
     import config
 
 REQUIRED_FIELDS = ("timestamp", "product_name", "scraped_title", "price", "price_numeric", "status")
 
+
 def connect() -> sqlite3.Connection:
-    """Create a connection with sane defaults for WAL-like workloads."""
-    conn = sqlite3.connect(config.DB_FILE, timeout=5)  # wait up to 5s if busy
-    conn.execute("PRAGMA busy_timeout=3000;")          # extra safety against SQLITE_BUSY
-    conn.execute("PRAGMA synchronous=NORMAL;")         # balance speed/durability
+    """Open a connection with sensible defaults for this workload."""
+    conn = sqlite3.connect(config.DB_FILE, timeout=5)
+    conn.execute("PRAGMA busy_timeout=3000;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
+
 def initialize() -> None:
-    """Ensure the table exists."""
+    """Create table if it does not exist."""
     with connect() as connection:
         connection.execute(
             """
@@ -30,11 +35,13 @@ def initialize() -> None:
             """
         )
 
+
 def save_price_data(data: Dict[str, Any]) -> None:
-    """Insert one scraped record. Requires REQUIRED_FIELDS keys."""
+    """Insert one scraped record; requires all REQUIRED_FIELDS."""
     missing = [k for k in REQUIRED_FIELDS if k not in data]
     if missing:
         raise ValueError(f"save_price_data missing required fields: {missing}")
+
     with connect() as connection:
         connection.execute(
             """
@@ -51,12 +58,14 @@ def save_price_data(data: Dict[str, Any]) -> None:
             ),
         )
 
+
 def get_latest_price(product_name: str) -> Optional[float]:
     """Return the most recent PriceNumeric for a product, or None."""
     with connect() as connection:
         cur = connection.execute(
             """
-            SELECT PriceNumeric FROM prices
+            SELECT PriceNumeric
+            FROM prices
             WHERE ProductName = ?
             ORDER BY Timestamp DESC
             LIMIT 1
@@ -68,8 +77,9 @@ def get_latest_price(product_name: str) -> Optional[float]:
             return None
         return row[0]
 
+
 def get_product_history(product_name: str) -> Iterable[Tuple[str, str, str]]:
-    """Newest-first history for a product: (Timestamp, ScrapedTitle, Price)."""
+    """Return newest-first history: (Timestamp, ScrapedTitle, Price)."""
     with connect() as connection:
         cur = connection.execute(
             """
