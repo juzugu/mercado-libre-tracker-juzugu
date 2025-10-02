@@ -1,4 +1,4 @@
-# main.py
+"""CLI entrypoint and run loop for the price tracker."""
 
 try:
     from . import menus, scraper, database
@@ -25,6 +25,7 @@ def run_price_check():
             print(f"  [Error] {name}: unexpected error during scrape: {e}")
             time.sleep(_SLEEP_SECONDS)
             continue
+
         if not scraped:
             print(f"  [Skip] {name}: no data returned by scraper.")
             time.sleep(_SLEEP_SECONDS)
@@ -33,12 +34,10 @@ def run_price_check():
         price_num = scraped.get("price_numeric")
         last_price = database.get_latest_price(name)
 
-        # Alert only on real price drops; tolerate None/missing price.
         if isinstance(price_num, (int, float)) and last_price is not None and price_num < last_price:
             print("  🎉 PRICE DROP ALERT! 🎉")
             print(f"  '{name}' dropped from ${last_price} to ${price_num}!")
 
-        # Persist whatever the scraper produced (status explains failures).
         database.save_price_data(scraped)
         print(f"  Saved: {name} (status={scraped.get('status', 'UNKNOWN')})")
 
@@ -48,7 +47,7 @@ def run_price_check():
 
 
 def main():
-    """Main entry point for the application menu."""
+    """Main menu loop."""
     database.initialize()
     while True:
         print("\n--- Price Tracker Menu ---")
